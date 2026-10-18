@@ -1,139 +1,123 @@
-# Arch Workstation v3 — Minimal, cómoda y orientada a desarrollo
+# Workstation v4 — CachyOS Personal Edition
 
-**Objetivo:** Arch x86_64, Intel Core i5-10210U, 24 GiB de RAM y NVMe ~250 GB.
-**Diseño:** Xfce + Xfwm4 sobre X11, LightDM, tema minimalista Orchis-Dark-Compact, KeePassXC, Btrfs/Snapper, ZRAM y Podman rootless. **Las ventanas se mueven con el mouse desde la barra de título sin ninguna tecla.**
-**Alcance:** configuración **posterior** a la instalación base. No toca particiones, claves de cifrado, cargador de arranque ni EFI.
+> Un perfil adaptativo **conservador** para CachyOS orientado a desarrollo y DevOps. No es una distro nueva, ni un optimizador mágico de FPS o CPU. Conserva las optimizaciones de CachyOS.
 
-> ⚠️ No existe un script que haga Arch tan conservadora como Debian Stable. Actualiza todo el sistema de forma coherente; confirma noticias oficiales antes; conserva copias externas y un medio de rescate. El hardware híbrido Nvidia requiere evaluación aparte.
+## Importante: ya no uses el `01-base.sh` de Arch Workstation v3
 
-## 0. Antes de instalar Arch: decisiones que importan
+Ese script **sobrescribe** `/etc/systemd/zram-generator.conf`, instala microcódigo Intel sin detección y añade otros ajustes que pueden duplicar los de CachyOS. En CachyOS **NO lo ejecutes**. Tampoco ejecutes automáticamente los scripts de kernel, bootloader o Snapper de Arch v3: primero evalúa cómo instaló CachyOS el sistema y qué soluciones ya trae.
 
-1. Copia tus datos y claves de recuperación de Windows/BitLocker. Decide antes si vas a borrar Windows o necesitas arranque dual. No reformatees la partición EFI de Windows si lo conservas.
-2. Arranca la ISO oficial de Arch en **UEFI**. Para reducir complejidad, usa `archinstall` y selecciona una instalación **Minimal** (sin entorno gráfico), NetworkManager y usuario normal con `sudo`.
-3. En una instalación nueva que **sustituye** Windows, considera GPT/EFI + **LUKS2** (cifrado en reposo) + **Btrfs** con compresión `zstd` y subvolúmenes raíz `@` y hogar `@home`. Reserva espacio suficiente en EFI para los kernels e initramfs y los posibles UKI, especialmente si usarás kernel LTS. No reparticiones por scripts sin confirmar el escenario. **Habilitar LUKS2 y gestionar Secure Boot correctamente se hace durante la instalación**, no se agrega mágicamente después.
-4. Si conservas Windows: haz copia de la clave de recuperación de BitLocker, suspende su protección cuando corresponda a modificaciones del arranque, desactiva Inicio rápido de Windows y decide la configuración Secure Boot con cuidado. En UEFI con claves personalizadas, no elimines certificados de Microsoft si necesitas Windows. Los pasos exactos varían por bootloader y firmware.
-5. Usa repositorios oficiales estables (no `[testing]`); no agregues AUR ni repositorios de terceros al comienzo. **No emplees `pacman -Sy paquete`**: Arch no admite actualizaciones parciales.
+**No ejecuta** cambios de kernel, ZRAM, swappiness, governor, sched-ext, initramfs, EFI, particiones, sistema de archivos, firewall o servicios. Los cambios del perfil de compilación ocurren solo en tu HOME y pueden revertirse. No agrega repositorios ni AUR.
 
-Referencias oficiales: https://wiki.archlinux.org/title/Installation_guide ; https://wiki.archlinux.org/title/Snapper ; https://wiki.archlinux.org/title/System_maintenance ; https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot
+## 1. Generar perfil del equipo
 
-## 1. Ejecutar los scripts
-
-Copia el directorio completo al nuevo Arch, entra a su directorio y corre como **usuario normal**, nunca `sudo ./script.sh`. Cada script solicita privilegios solo donde los necesita.
+Ejecuta desde la sesión instalada de CachyOS y como usuario normal (NO como root ni desde la ISO Live):
 
 ```bash
-cd arch-workstation
-bash scripts/00-diagnostico.sh
-bash scripts/01-base.sh
-bash scripts/02-escritorio.sh
-# Inicia sesión gráfica Xfce antes de ejecutar el siguiente paso:
+cd cachy-workstation-v4
+python3 ws.py plan
+python3 ws.py scan
+```
+
+`plan` muestra una vista previa sin escribir nada. `scan` genera `~/.local/state/workstation/profile.json` con características y recomendaciones. No incluye nombre de host, IP, MAC ni número de serie; **antes de publicar el JSON, revísalo** porque contiene modelo CPU, GPU, kernel y otras características del equipo.
+
+Detección: `/proc/meminfo`, `os.cpu_count`, almacenamiento y FS de `/`, discos físicos de `lsblk` si está disponible, GPU de `lspci`, VM de `systemd-detect-virt`, baterías y chasis, sesión gráfica, servicio de ZRAM, power-profiles-daemon, tuned y TLP. Todas las herramientas adicionales son opcionales; sin ellas el perfil conserva datos parciales.
+
+**Reglas dinámicas heurísticas (no benchmarks):**
+
+- Perfil **compacto**: RAM <= 8 GiB o <= 2 hilos lógicos.
+- Perfil **equilibrado**: RAM < 16 GiB o < 4 hilos.
+- Perfil **capaz**: recursos superiores.
+- `build_jobs`: mínimo entre hilos menos uno, una estimación de ~2 GiB por trabajo (dejando 2 GiB al SO), y un techo de 4/6/10 para compacta/portátil o VM/escritorio. No sustituye las mediciones de consumo de una compilación real.
+- `container_parallel_limit_advisory`: sugerencia basada en CPU, RAM y espacio, no un límite de Podman ni Docker configurado globalmente.
+- `journal_limit_mib`: **propuesta** calculada para el tamaño del disco; v4 no la aplica automáticamente porque CachyOS puede tener sus propios límites.
+
+Cada ejecución vuelve a detectar recursos. El perfil no modifica el governor ni persigue el uso de CPU minuto a minuto. En Hyper-V el perfil representa la **VM**, no los recursos reales del host Windows.
+
+## 2. Aplicar perfil de compilación seguro
+
+```bash
+python3 ws.py apply
+# Alternativamente, recalcular JSON + ajustes de usuario tras cambiar de hardware:
+python3 ws.py refresh
+```
+
+Genera únicamente:
+
+- `~/.config/workstation/build.env`: `MAKEFLAGS`, `CMAKE_BUILD_PARALLEL_LEVEL`, `CARGO_BUILD_JOBS`.
+- `~/.local/bin/ws-build`: ejecuta comandos **con ese límite**, por ejemplo `~/.local/bin/ws-build make` o `~/.local/bin/ws-build cargo build`.
+
+Es intencional: no exportamos variables globales que afecten silenciosamente a todos tus proyectos ni cambiamos el scheduler por sistema. El wrapper aplica límites únicamente al proceso lanzado desde él; algunas herramientas pueden ignorar dichas variables.
+
+Antes de sobrescribir una versión anterior se crea una copia en `~/.local/state/workstation/backups/`. Para deshacer el último cambio:
+
+```bash
+python3 ws.py rollback         # vista previa
+python3 ws.py rollback --yes   # restaura solo si nadie editó después el archivo
+```
+
+## 3. Instalar tus herramientas por módulos (opcional)
+
+El modo normal es **solo previsualización**. Se usa `sudo pacman -Syu --needed` exclusivamente con `--yes` desde un usuario normal.
+
+| Módulo | Herramientas | Activación |
+|---|---|---|
+| `core` | Git, Git LFS, Helix, ripgrep, fd, fzf, bat, jq/yq, btop, htop, Lazygit, SQLite, Python/pipx, Go, Bun, Node/npm | `python3 ws.py tools core --yes` |
+| `desktop` | Flameshot | `python3 ws.py tools desktop --yes` |
+| `editor` | Code - OSS (`code`), basado en Electron; relativamente pesado | `python3 ws.py tools editor --yes` |
+| `backend` | .NET SDK, ASP.NET targeting, PHP, Composer | `python3 ws.py tools backend --yes` |
+| `devops` | Podman, Buildah, Skopeo, Ansible Core, kubectl, Helm | `python3 ws.py tools devops --yes` |
+| `passwords` | KeePassXC | `python3 ws.py tools passwords --yes` |
+| `xfce-style` | Orchis, Papirus, Inter, Whisker Menu, Docklike | `python3 ws.py tools xfce-style --yes` |
+
+Solo paquetes de repositorios visibles para Pacman; **nada de AUR**, scripts remotos, servicios activados, cambios de grupo Docker ni apertura de puertos. Un `pacman -Syu` puede actualizar kernels y paquetes como parte de la actualización completa normal; revisa la transacción antes de confirmarla y ten respaldo. No instala Docker rootful. Las herramientas grandes son opcionales para ahorrar SSD.
+
+Para ver el contenido sin instalar:
+
+```bash
+python3 ws.py tools core
+```
+
+## 4. Personalidad minimalista (solo si usas Xfce + Xfwm4/X11)
+
+No se cambia tu entorno gráfico actual; CachyOS puede venir con KDE Plasma, GNOME u otro escritorio. **No sustituyas KDE por Xfce sin decidirlo tú.** Si ya utilizas una sesión Xfce sobre X11:
+
+```bash
+python3 ws.py tools xfce-style --yes
 bash scripts/12-personalizar-xfce.sh
-bash scripts/13-estilo-minimal.sh    # Tema, tipografía, iconos, bordes discretos
-# Después de verificar cuál es tu panel principal, p. ej.:
-# bash scripts/13-estilo-minimal.sh --panel=1
-bash scripts/03-seguridad.sh
-bash scripts/04-desarrollo.sh
-bash scripts/05-backend.sh       # opcional: PHP/.NET
-bash scripts/06-devops.sh        # opcional: Podman, K8s, Ansible
-bash scripts/07-snapshots-btrfs.sh # SOLO si / es Btrfs
-bash scripts/10-verificacion.sh
+bash scripts/13-estilo-minimal.sh
 ```
 
-Para kernel de respaldo: `bash scripts/09-kernel-lts-opcional.sh`. **Este script no edita el bootloader**, así que debes garantizar que existe entrada válida LTS e initramfs/UKI antes de contar con él como alternativa. Para actualizar cada semana o cuando haya avisos de seguridad: `bash scripts/08-actualizar-seguro.sh` (pregunta antes y crea snapshots si existe configuración).
+Ventanas movibles con el **mouse directamente desde la barra de título**; decoraciones ligeras, tema Orchis oscuro compacto, iconos Papirus, letra Inter, botones visibles y panel configurable. Para mover un panel existente arriba, indica su ID conscientemente con `bash scripts/13-estilo-minimal.sh --panel=ID`. Respaldos en `~/.local/share/arch-workstation/backups/`.
 
-Para respaldar HOME a un medio externo montado, por ejemplo `/run/media/tuusuario/EXTERNO`: `bash scripts/11-backup-externo.sh /run/media/tuusuario/EXTERNO`. Revisa que sea otro disco físico. Las contraseñas de Restic se introducen interactivamente y nunca se dejan en scripts.
-
-### Riesgos evitados expresamente
-
-- **Nunca:** `pacman -Sy` aislado, `-Rdd`, borrados de caché `pacman -Scc`, eliminación masiva de paquetes huérfanos sin revisión, cambios automáticos de arranque/particiones, AUR ejecutado como root, servicios SSH abiertos por defecto.
-- **No desactivamos:** mitigaciones Spectre/Meltdown, journald, verificaciones de firmas, ASLR, IPv6, SELinux/AppArmor a ciegas ni servicios indispensables.
-- **No se hace:** autologin, contraseña vacía, configuración insegura de sudo, actualización desatendida automática, script `curl | bash`, Docker rootful obligatorio.
-
-## 2. Escritorio personal: interacción como Windows 11, sin exigir teclas
-
-**La opción anterior AwesomeWM queda sustituida por Xfce + Xfwm4.** El paquete no desinstala ningún escritorio existente; permite elegir «Xfce Session» desde LightDM. La elección X11 prioriza madurez del stack en este equipo. X11 no tiene el mismo aislamiento de aplicaciones que Wayland.
-
-### Gestos cotidianos (todos con mouse)
-
-- **Mover:** arrastra la barra de título de una ventana normal. **Sin Super**, Alt ni otro modificador.
-- **Cambiar tamaño:** arrastra un borde o esquina de la ventana.
-- **Maximizar/restaurar:** doble clic sobre la barra de título.
-- **Organizar lado a lado:** arrastra la ventana hacia el borde izquierdo/derecho para ajustarla, sin modo especial ni tecla.
-- **Menú Inicio:** Whisker Menu en el panel.
-- **Barra de tareas:** Docklike Taskbar, permite agrupar ventanas y fijar aplicaciones.
-- **Archivos:** Thunar; preferencias gráficas normales; notificaciones, volumen, red y suspender sesión mediante interfaz.
-
-`02-escritorio.sh` instala todos los componentes; `12-personalizar-xfce.sh` configura comportamientos del gestor de ventanas **desde dentro de una sesión gráfica Xfce**, con respaldos previos y sin reemplazar el panel del usuario. Para asegurar compatibilidad entre versiones, la colocación de Whisker y Docklike se hace mediante Preferencias del panel (menú contextual → Panel → Preferencias → Elementos); el script imprime una guía clara. No fuerza el cambio del gestor de acceso ni de la red si están configurados.
-
-La configuración por usuario se almacena en `~/.config/xfce4/` y se administra con `xfconf-query` o desde Configuración. En adelante mantenla como una colección de perfiles de dotfiles en Git, separando ajustes personales de los datos secretos. El directorio `config/xfce/` resume el enfoque.
-
-Si algún día prefieres transiciones visuales o funciones nativas de tiling más extensas que las de Xfwm4, KDE Plasma es alternativa legítima con más componentes y mayor superficie de configuración, pero Xfce es un mejor punto de partida para tu objetivo minimalista.
-
-## 2.1. Perfil visual minimalista inspirado en la referencia
-
-La intención es una interfaz limpia y **manejable con mouse**, no una imitación de los administradores de ventanas con atajos obligatorios. Base: Xfce + Xfwm4, tema **Orchis-Dark-Compact** (GTK3 y decoración Xfwm4), iconos **Papirus-Dark**, tipografía **Inter**, panel horizontal superior de **32 px**, botones minimizar/maximizar/cerrar visibles y fondos discretos.
-
-**Cómo aplicarlo:** `bash scripts/13-estilo-minimal.sh`. Este paso aplica apariencia sin mover ni eliminar paneles. Para colocar el panel principal arriba, primero identifica su ID con `xfconf-query -c xfce4-panel -lv | grep '/position'`; entonces ejecuta, por ejemplo, `bash scripts/13-estilo-minimal.sh --panel=1`. Este ajuste cambia solamente el panel existente cuyo ID seleccionaste, lo coloca arriba, a ancho completo y 32 px. **No elimina un segundo dock**; hazlo manualmente si no lo deseas. Elige los plugins del panel con clic derecho → Panel → Preferencias → Elementos: Whisker Menu, botones de ventana / Docklike, separador expansible, notificaciones, red, volumen y reloj. Reordénalos con el mouse y evita información de diagnóstico constante que solo produce ruido visual.
-
-El script guarda copias de preferencias XML, listados xfconf y, cuando está disponible, un perfil exportado por `xfce4-panel-profiles` antes de los cambios. Para recuperar el panel desde la copia: `xfce4-panel-profiles load /ruta/al/respaldo/panel-layout.tar.bz2`. Si solo hay XML, restaura después de cerrar sesión y con xfconf inactivo. Para las otras preferencias puedes revertir con la interfaz gráfica o comparar los XML respaldados. Esta recuperación debe comprobarse en tu versión de Xfce antes de asumir que funciona en todos los casos.
-
-**Limitaciones:** temas de GTK no se aplican uniformemente a apps Qt/GTK4 con libadwaita; Xfwm4 tampoco produce esquinas redondeadas universales. No añadimos Picom porque Xfwm4 ya trae un compositor básico. No descargamos fondos ni sobrescribimos el escritorio actual. Todo está en repositorios oficiales; no AUR.
-
-## 3. Contraseñas y secretos
-
-**KeePassXC** almacena contraseñas distintas y largas en una base cifrada KDBX **local**, sin sincronización automática a nube. Solo necesitas recordar una frase maestra robusta para la bóveda y conservar un método de recuperación independiente; LUKS y tu cuenta del sistema pueden necesitar credenciales separadas. No existe seguridad real «sin conocer ni poder recuperar ninguna credencial».
-
-1. Crea una bóveda `Vault.kdbx` con contraseña maestra fuerte. Guarda una copia **externa cifrada** y prueba restaurarla.
-2. En Firefox, instala **KeePassXC-Browser** desde el sitio oficial de complementos; luego activa la integración con navegadores dentro de KeePassXC. Confirma manualmente la conexión.
-3. Activa el bloqueo automático de KeePassXC por inactividad/suspensión, vaciado periódico del portapapeles, y si te interesa, el soporte de llaves SSH con `ssh-agent` (requiere configurar agente de usuario y su socket).
-4. Para una mejora opcional, considera una llave de seguridad física compatible con las funciones de KeePassXC. Mantén copia de recuperación por si se pierde.
-5. No guardes tokens en repositorios Git ni en `.env` versionados; no uses `git config --global credential.helper store` para secretos (puede conservarlos en texto claro).
-
-**Opciones alternativas:** Bitwarden ofrece sincronización entre dispositivos, pero su aplicación de escritorio añade recursos al usar tecnología Electron. KeePassXC es deliberadamente local y mínimo en dependencias de servicios.
-
-## 4. Contenedores y desarrollo
-
-- `04-desarrollo.sh`: Helix, Git, ripgrep, fd, fzf, Bun, Go, Python, Node/npm, herramientas CLI.
-- `05-backend.sh`: SDK .NET, ASP.NET y PHP/Composer; sin servidores activados automáticamente.
-- `06-devops.sh`: Podman sin daemon root obligatorio, Buildah, Skopeo, Ansible, kubectl, Helm.
-
-Para servicios de desarrollo limita los puertos al loopback cuando no necesites acceso por LAN:
+Flameshot en Xfce/X11:
 
 ```bash
-podman run --rm -p 127.0.0.1:8080:80 docker.io/library/nginx:stable
+python3 ws.py tools desktop --yes
+bash scripts/14-flameshot-xfce.sh           # vista previa
+bash scripts/14-flameshot-xfce.sh --yes     # vincula tecla Impr Pant
 ```
 
-**Docker y Podman no son idénticos**: Compose, algunos clientes de Docker Engine y montajes particulares pueden requerir Docker real. En ese caso instálalo explícitamente por proyecto, evalúa Docker rootless, los permisos del socket, las reglas de firewall y las variables de entorno. No agregues al usuario al grupo `docker` por comodidad: equivale a acceso privilegiado en una configuración estándar.
+Los atajos de Xfce pueden variar según versión o preconfiguración; revisa si hay un atajo duplicado. En **Wayland (p. ej. KDE)** no se aplica este script: las capturas dependen del compositor, portal y permisos de captura y requieren configuración específica. X11 permite más interoperabilidad entre ventanas, pero también ofrece menos aislamiento entre aplicaciones.
 
-## 5. Snapshots, mantenimiento y ahorro de espacio
+## 5. Seguridad, mantenimiento y confiabilidad
 
-`07-snapshots-btrfs.sh` SOLO crea la configuración Snapper si `/` es Btrfs y no hay otra config o un `/.snapshots` previo. Si `archinstall` creó `@.snapshots` montado, el script **se abstiene**: hay que adaptar Snapper al montaje correcto; no borres subvolúmenes existentes automáticamente.
+- **Credenciales:** KeePassXC (crear la bóveda, frase maestra, copias cifradas e integración con navegador son acciones manuales). No desactives el bloqueo de sesión ni guardes contraseñas en el repositorio.
+- **Snapshots:** comprueba la estructura de subvolúmenes y si ya existe Snapper/Timeshift antes de crear otro sistema de snapshots. Las copias Btrfs NO reemplazan un backup externo.
+- **Actualizaciones:** repositorios de CachyOS, transacciones completas Pacman; revisar noticias de CachyOS/Arch y archivos `.pacnew`. CachyOS tiene soluciones propias de actualización, incluido el mecanismo offline.
+- **Energía:** no mezcles TLP, tuned y power-profiles-daemon sin investigar incompatibilidades. Si existen varios activos, el perfil genera un aviso; **no los deshabilita**.
+- **ZRAM:** CachyOS ya suele proporcionar ZRAM vía `cachyos-settings`; no dupliques configuraciones de swap.
+- **Kernel:** el de CachyOS está ajustado para rendimiento; no lo sustituyas sin un motivo real. Para respaldo estable, CachyOS distribuye un kernel LTS propio, sujeto a configuración de arranque.
 
-Cuando crea la configuración, limita la retención programada a 0 por hora, 3 diarias, 2 semanales y 1 mensual, y activa timers de Snapper. El espacio consumido es variable porque depende de bloques modificados; revisa `btrfs filesystem usage /`. Los snapshots **no son backups**. No incluyen otros subvolúmenes como `@home` ni garantizan restauración con un clic. El bootloader y configuración de LUKS determinan el proceso de recuperación desde una ISO.
+## 6. Validaciones / límites
 
-En el NVMe de 250 GB considera separar los datos pesados (contenedores, PostgreSQL y caches de compilación) en subvolúmenes si diseñas el esquema al instalar. No desactives CoW globalmente; en bases de datos evalúa por separado las implicaciones de CoW, consistencia y snapshots. No reserves demasiado espacio para el sistema con particiones rígidas: Btrfs comparte espacio entre subvolúmenes.
+- Código Python compatible con 3.10+; no requiere pip ni dependencias externas.
+- Pruebas locales de políticas: `python3 -m unittest discover -s tests -v`.
+- Validación sintáctica shell: `bash -n scripts/*.sh`.
+- **No se ha probado aplicando cambios sobre tu Hyper-V ni sobre una instalación real de CachyOS**. Siempre revisa el `plan` y prueba antes de usarlo en el PC físico.
+- La v4 es un nuevo núcleo de configuración; **no ejecuta ni reemplaza automáticamente todo v3**. Los scripts visuales Xfce 12/13 se conservaron explícitamente, ahora protegidos para su uso en CachyOS.
 
-`01-base.sh` instala zram-generator, configura Zstd con `min(ram/3, 8192 MiB)` (≈8 GiB con 24 GiB RAM) y limita journal en disco. **ZRAM no significa reservar 8 GiB permanentes de RAM**: ese es el tamaño lógico máximo de swap comprimido. No sustituye un swap apropiado si necesitas hibernación. Se habilita también `fstrim.timer` y la limpieza programada del caché de pacman conservando versiones útiles.
-
-Para un ciclo de mantenimiento: lee https://archlinux.org/news/ → `bash scripts/08-actualizar-seguro.sh` → resuelve `.pacnew` → comprueba servicios y errores → reinicia si cambió kernel/driver/systemd. Evita dejar Arch meses sin actualizar.
-
-## 6. Seguridad y límites
-
-UFW deniega entrada y permite salida; se activa solo desde una sesión local y se niega a cambiar reglas en una sesión SSH. Si ya administras `nftables` o `firewalld`, no lo pisa. **No se abrió puerto 22** ni se habilitó `sshd`. Arch-audit programa avisos de paquetes vulnerables.
-
-Esto **no es una auditoría o hardening total**; quedan tareas manuales: firmware actualizado, Secure Boot firmado si se requiere, verificación de periféricos, backups restaurables, control del navegador, política de suspensión, evaluación del driver NVIDIA híbrido si existe y controles de seguridad del navegador/servicios que uses.
-
-### Enlaces de referencia (oficiales)
-
-- https://wiki.archlinux.org/title/System_maintenance
-- https://wiki.archlinux.org/title/Snapper
-- https://wiki.archlinux.org/title/Btrfs
-- https://wiki.archlinux.org/title/Zram
-- https://wiki.archlinux.org/title/Xfce
-- https://wiki.archlinux.org/title/KeePass
-- https://wiki.archlinux.org/title/Podman
-- https://wiki.archlinux.org/title/Uncomplicated_Firewall
-- https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot
-
-## Nota de migración desde la primera edición
-
-El ZIP v3 mantiene la migración: reemplaza `scripts/02-escritorio.sh` e introduce `scripts/12-personalizar-xfce.sh`. No vuelvas a ejecutar el instalador Awesome de la edición anterior: las configuraciones de Awesome ya no forman parte del paquete nuevo. Si ya instalaste Awesome, puedes dejarlo mientras pruebas Xfce y elegir sesión en LightDM; retíralo **solo cuando hayas comprobado que Xfce te funciona**.
+Referencias:
+- https://wiki.cachyos.org/es/features/cachyos_settings/
+- https://wiki.cachyos.org/es/features/kernel/
+- https://wiki.cachyos.org/es/configuration/general_system_tweaks/
+- https://wiki.cachyos.org/es/configuration/post_install_setup/
