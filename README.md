@@ -1,6 +1,36 @@
-# Workstation v4 — CachyOS Personal Edition
+# Workstation v4.1 — CachyOS Personal Edition
 
 > Un perfil adaptativo **conservador** para CachyOS orientado a desarrollo y DevOps. No es una distro nueva, ni un optimizador mágico de FPS o CPU. Conserva las optimizaciones de CachyOS.
+
+
+## 0. CAMBIO IMPORTANTE v4.1 — Personalización visual REAL (Xfce/X11)
+
+**La v4 no cambiaba el diseño completo.** `ws.py apply` solo ajusta el límite de compilación en el HOME.
+La nueva orden `style` sí modifica el aspecto visible: papel tapiz, tema GTK y Xfwm4, iconos, fuente, panel superior, menú Whisker, indicador de escritorios, tareas tipo dock, reloj, controles de ventanas y elimina iconos grandes del escritorio.
+
+Desde una sesión **Xfce / X11 instalada**, abre la terminal como usuario normal (SIN sudo):
+
+```bash
+python3 ws.py style                           # vista previa, sin cambios
+python3 ws.py tools xfce-style --yes           # instala temas y complementos
+python3 ws.py style --apply                   # APLICA diseño completo
+```
+
+**Restauración del diseño anterior:**
+
+```bash
+python3 ws.py style --restore
+```
+
+El programa obliga a contar con `xfce4-panel-profiles` para respaldar el panel ANTES de modificarlo. Los respaldos personales quedan en `~/.local/state/workstation/appearance/`. No instala AUR, no toca particiones ni kernel, y no requiere permisos root para estilizar.
+
+**Notas:**
+- El script aplica un panel superior único, *ocultando* paneles adicionales, y reconstruye su disposición. Se restauran con `--restore`.
+- Puede solicitar cerrar/iniciar sesión para que todos los widgets se actualicen.
+- La imagen de fondo está incluida en `assets/workstation-sage.png` (no se descarga de Internet). Si Xfce no tiene aún una ruta de wallpaper registrada, deberás seleccionarlo desde Preferencias del escritorio.
+- Si tienes elementos personalizados en el panel, el script cambiará su distribución. Se conserva una copia antes de modificarla.
+- Ajusta solamente tu usuario activo; para otros usuarios, aplica el estilo desde cada sesión.
+- Validado sintácticamente pero **no probado todavía en una sesión CachyOS Xfce real**. Pruébalo primero en Hyper-V.
 
 ## Importante: ya no uses el `01-base.sh` de Arch Workstation v3
 
@@ -77,27 +107,24 @@ Para ver el contenido sin instalar:
 python3 ws.py tools core
 ```
 
-## 4. Personalidad minimalista (solo si usas Xfce + Xfwm4/X11)
+## 4. Personalización alternativa, manual o incremental
 
-No se cambia tu entorno gráfico actual; CachyOS puede venir con KDE Plasma, GNOME u otro escritorio. **No sustituyas KDE por Xfce sin decidirlo tú.** Si ya utilizas una sesión Xfce sobre X11:
+Si solo quieres modificar algunas preferencias sin reconstruir el panel, los antiguos scripts de v3 continúan disponibles:
 
 ```bash
-python3 ws.py tools xfce-style --yes
 bash scripts/12-personalizar-xfce.sh
 bash scripts/13-estilo-minimal.sh
 ```
 
-Ventanas movibles con el **mouse directamente desde la barra de título**; decoraciones ligeras, tema Orchis oscuro compacto, iconos Papirus, letra Inter, botones visibles y panel configurable. Para mover un panel existente arriba, indica su ID conscientemente con `bash scripts/13-estilo-minimal.sh --panel=ID`. Respaldos en `~/.local/share/arch-workstation/backups/`.
+**Estos scripts NO producen el escritorio completo.** Para modernizarlo de verdad utiliza el comando único `python3 ws.py style --apply`, documentado al comienzo.
 
 Flameshot en Xfce/X11:
 
 ```bash
 python3 ws.py tools desktop --yes
 bash scripts/14-flameshot-xfce.sh           # vista previa
-bash scripts/14-flameshot-xfce.sh --yes     # vincula tecla Impr Pant
+bash scripts/14-flameshot-xfce.sh --yes     # asigna Impr Pant
 ```
-
-Los atajos de Xfce pueden variar según versión o preconfiguración; revisa si hay un atajo duplicado. En **Wayland (p. ej. KDE)** no se aplica este script: las capturas dependen del compositor, portal y permisos de captura y requieren configuración específica. X11 permite más interoperabilidad entre ventanas, pero también ofrece menos aislamiento entre aplicaciones.
 
 ## 5. Seguridad, mantenimiento y confiabilidad
 

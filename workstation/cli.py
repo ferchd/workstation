@@ -19,7 +19,7 @@ MODULES = {
     "backend": ("SDKs de backend", ["dotnet-sdk", "aspnet-targeting-pack", "php", "composer"]),
     "devops": ("Contenedores y DevOps", ["podman", "buildah", "skopeo", "ansible-core", "kubectl", "helm"]),
     "passwords": ("Gestor de contraseñas", ["keepassxc"]),
-    "xfce-style": ("Tema e iconos ligeros para Xfce", ["orchis-theme", "papirus-icon-theme", "inter-font", "xfce4-whiskermenu-plugin", "xfce4-docklike-plugin"]),
+    "xfce-style": ("Tema e iconos ligeros para Xfce", ["orchis-theme", "papirus-icon-theme", "inter-font", "xfce4-whiskermenu-plugin", "xfce4-docklike-plugin", "xfce4-pulseaudio-plugin", "xfce4-panel-profiles"]),
 }
 
 
@@ -201,6 +201,10 @@ def main() -> None:
     sub.add_parser("refresh", help="Reexaminar hardware, escribir JSON y actualizar ajustes de usuario")
     rollback = sub.add_parser("rollback", help="Revertir último cambio si archivos no fueron modificados")
     rollback.add_argument("--yes", action="store_true")
+    style = sub.add_parser("style", help="Vista previa, aplicar o restaurar apariencia completa de Xfce")
+    style_action = style.add_mutually_exclusive_group()
+    style_action.add_argument("--apply", action="store_true", help="Aplica el perfil Sage sobre Xfce/X11")
+    style_action.add_argument("--restore", action="store_true", help="Restaura el último perfil visual")
     tools = sub.add_parser("tools", help="Previsualizar o instalar paquetes por módulo")
     tools.add_argument("module", choices=sorted(MODULES))
     tools.add_argument("--yes", action="store_true", help="Ejecutar pacman -Syu --needed")
@@ -219,6 +223,10 @@ def main() -> None:
             sys.exit("Refresh solo admite CachyOS instalado, fuera del entorno Live.")
         do_scan(p, None)
         do_apply(p)
+    elif args.action == "style":
+        helper = Path(__file__).resolve().parents[1] / "scripts/15-escritorio-completo.py"
+        mode = "--apply" if args.apply else "--restore" if args.restore else "--plan"
+        subprocess.run([sys.executable, str(helper), mode], check=True)
     elif args.action == "tools":
         do_tools(args.module, args.yes, p)
     elif args.action == "rollback":
